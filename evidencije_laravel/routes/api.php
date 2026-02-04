@@ -4,6 +4,9 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\PredmetController;
+use App\Http\Controllers\UserController;
+
 
 
 
@@ -17,6 +20,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/me', fn (Request $request) => response()->json($request->user())); 
     Route::post('/logout', [AuthController::class, 'logout']); 
+
+    Route::get('/users', [UserController::class, 'index']);
+
+    Route::get('/predmeti/moji', [PredmetController::class, 'moji']);
+
+    Route::get('/predmeti', [PredmetController::class, 'index']);
+    Route::get('/predmeti/{id}', [PredmetController::class, 'show']);
+
+    Route::post('/predmeti', [PredmetController::class, 'store']);
+    Route::put('/predmeti/{id}', [PredmetController::class, 'update']);
+    Route::delete('/predmeti/{id}', [PredmetController::class, 'destroy']);
 
    
 });
