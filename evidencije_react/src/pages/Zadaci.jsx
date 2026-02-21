@@ -6,6 +6,35 @@ import { useAuth } from "../auth/AuthContext";
 import Button from "../components/Button";
 import Modal from "../components/Modal";
 
+function formatRok(value) {
+  if (!value) return "-";
+
+   if (typeof value === "string") {
+    const isoLike = value.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+    if (isoLike) {
+      const [, y, m, d, hh, mm] = isoLike;
+      return `${d}.${m}.${y}. ${hh}:${mm}`;
+    }
+
+    const onlyDate = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (onlyDate) {
+      const [, y, m, d] = onlyDate;
+      return `${d}.${m}.${y}.`;
+    }
+  }
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+
+  return d.toLocaleString("sr-RS", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function Zadaci() {
   const { user } = useAuth();
   const isAdmin = user?.uloga === "ADMIN";
@@ -26,7 +55,6 @@ export default function Zadaci() {
     rokPredaje: "",
   });
 
-  // modal detalji
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(null);
 
@@ -178,9 +206,9 @@ export default function Zadaci() {
             </div>
 
             <div style={{ display: "grid", gap: 6 }}>
-              <label>Rok predaje</label>
+               <label>Rok predaje (datum i vreme)</label>
               <Input
-                type="date"
+                type="datetime-local"
                 value={form.rokPredaje}
                 onChange={(e) => setForm((prev) => ({ ...prev, rokPredaje: e.target.value }))}
                 required
@@ -215,7 +243,7 @@ export default function Zadaci() {
               <div>
                 <b>{z.naslov}</b>
               </div>
-              <div>Rok: {z.rok_predaje}</div>
+              <div>Rok: {formatRok(z.rok_predaje)}</div>
               <div style={{ fontSize: 13, color: "#555" }}>{z.opis}</div>
             </div>
 
@@ -245,7 +273,7 @@ export default function Zadaci() {
               <b>Naslov:</b> {selected.naslov}
             </div>
             <div>
-              <b>Rok:</b> {selected.rok_predaje}
+              <b>Rok:</b> {formatRok(selected.rok_predaje)}
             </div>
             <div>
               <b>Opis:</b> {selected.opis ?? "-"}

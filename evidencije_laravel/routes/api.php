@@ -10,6 +10,7 @@ use App\Http\Controllers\ZadatakController;
 use App\Http\Controllers\PredajaController;
 use App\Http\Controllers\ProveraPlagijataController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\KalendarController;
 
 
 Route::controller(AuthController::class)->group(function () {
@@ -27,6 +28,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/zadaci/moji', [ZadatakController::class, 'moji']);
     Route::get('/predaje/moje', [PredajaController::class, 'moje']); 
     Route::get('/predaje/za-moje-predmete', [PredajaController::class, 'zaMojePredmete']); 
+
+    Route::get('/kalendar/rokovi', [KalendarController::class, 'rokovi']);
 
     Route::get('/predmeti', [PredmetController::class, 'index']);
     Route::get('/predmeti/{id}', [PredmetController::class, 'show']);
