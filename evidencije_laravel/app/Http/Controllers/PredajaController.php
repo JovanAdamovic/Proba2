@@ -9,9 +9,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use OpenApi\Attributes as OA;
 
 class PredajaController extends Controller
 {
+
+    #[OA\Get(
+        path: "/api/predaje",
+        summary: "Lista predaja. ADMIN: sve; STUDENT: moje; PROFESOR: predaje za moje predmete.",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista predaja"),
+            new OA\Response(response: 401, description: "Unauthorized")
+        ]
+    )]
     public function index()
     {
 
@@ -29,6 +41,30 @@ class PredajaController extends Controller
 
         return $this->zaMojePredmete();
     }
+
+    #[OA\Get(
+        path: "/api/predaje/{id}",
+        summary: "Detalji predaje. ADMIN: sve; STUDENT: samo svoje; PROFESOR: samo za svoje predmete.",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predaje",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Detalji predaje"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Predaja nije pronađena"),
+            new OA\Response(response: 409, description: "Predaja nema vezan predmet")
+        ]
+    )]
 
     public function show($id)
     {
@@ -66,6 +102,30 @@ class PredajaController extends Controller
 
         return new PredajaResource($predaja);
     }
+     
+    #[OA\Get(
+        path: "/api/predaje/{id}/file",
+        summary: "Preuzimanje fajla predaje. STUDENT: samo svoje; PROFESOR: samo za svoje predmete; ADMIN: sve.",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predaje",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Fajl predaje (binary)"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Predaja nema fajl ili fajl nije pronađen"),
+            new OA\Response(response: 409, description: "Predaja nema vezan predmet")
+        ]
+    )]
 
     public function file($id)
     {
@@ -104,6 +164,47 @@ class PredajaController extends Controller
 
         return response()->file(Storage::disk('public')->path($predaja->file_path));
     }
+
+     
+    #[OA\Post(
+        path: "/api/predaje",
+        summary: "Kreiranje predaje (STUDENT). Upload fajla je opcioni (multipart/form-data).",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["zadatak_id"],
+                    properties: [
+                        new OA\Property(property: "zadatak_id", type: "integer", example: 10),
+                        new OA\Property(
+                            property: "file",
+                            type: "string",
+                            format: "binary",
+                            description: "Fajl predaje (pdf/doc/docx/txt/zip, max 10MB)"
+                        ),
+                        new OA\Property(
+                            property: "file_path",
+                            type: "string",
+                            nullable: true,
+                            example: "predaje/abc123.pdf",
+                            description: "Ako se ne šalje fajl, može se proslediti postojeća putanja (opciono)."
+                        )
+                    ],
+                    type: "object"
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Predaja kreirana"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno (nije student / nije upisan)"),
+            new OA\Response(response: 409, description: "Već postoji predaja za ovaj zadatak"),
+            new OA\Response(response: 422, description: "Validaciona greška")
+        ]
+    )]
 
     public function store(Request $request)
     {
@@ -163,6 +264,58 @@ class PredajaController extends Controller
         ], 201);
     }
 
+    #[OA\Put(
+        path: "/api/predaje/{id}",
+        summary: "Ažuriranje predaje (PROFESOR ili ADMIN). Može menjati status/ocenu/komentar i opcionalno uploadovati novi fajl.",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predaje",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(
+                            property: "status",
+                            type: "string",
+                            nullable: true,
+                            example: "OCENJENO",
+                            description: "Dozvoljene vrednosti: PREDATO, OCENJENO, VRAĆENO, ZAKAŠNJENO"
+                        ),
+                        new OA\Property(property: "ocena", type: "number", format: "float", nullable: true, example: 9.5),
+                        new OA\Property(property: "komentar", type: "string", nullable: true, example: "Dobar rad, sitne ispravke."),
+                        new OA\Property(
+                            property: "file",
+                            type: "string",
+                            format: "binary",
+                            description: "Novi fajl (pdf/doc/docx/txt/zip, max 10MB)"
+                        ),
+                        new OA\Property(property: "file_path", type: "string", nullable: true, example: "predaje/novi.pdf"),
+                        new OA\Property(property: "submitted_at", type: "string", format: "date-time", nullable: true, example: "2026-03-02 12:30:00")
+                    ],
+                    type: "object"
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Predaja ažurirana"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Predaja nije pronađena"),
+            new OA\Response(response: 422, description: "Validaciona greška")
+        ]
+    )]
+
 
     public function update(Request $request, $id)
     {
@@ -211,6 +364,30 @@ class PredajaController extends Controller
         );
     }
 
+    #[OA\Delete(
+        path: "/api/predaje/{id}",
+        summary: "Brisanje predaje. STUDENT: samo svoje i ako nije OCENJENO; PROFESOR: samo za svoje predmete; ADMIN: sve.",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predaje",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Predaja obrisana"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Predaja nije pronađena"),
+            new OA\Response(response: 409, description: "Predaja je već ocenjena / nema vezan predmet")
+        ]
+    )]
+
     public function destroy($id)
     {
         $user = auth()->user();
@@ -249,6 +426,18 @@ class PredajaController extends Controller
         return response()->json(['message' => 'Predaja je uspešno obrisana.'], 200);
     }
 
+    #[OA\Get(
+        path: "/api/predaje/moje",
+        summary: "Moje predaje (STUDENT).",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista mojih predaja"),
+            new OA\Response(response: 401, description: "Unauthorized")
+        ]
+    )]
+
+
     public function moje()
     {
         $user = auth()->user();
@@ -259,6 +448,18 @@ class PredajaController extends Controller
                 ->get()
         );
     }
+
+    #[OA\Get(
+        path: "/api/predaje/za-moje-predmete",
+        summary: "Predaje za moje predmete (PROFESOR).",
+        tags: ["Predaje"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista predaja"),
+            new OA\Response(response: 401, description: "Unauthorized")
+        ]
+    )]
+
 
     public function zaMojePredmete()
     {
@@ -273,64 +474,5 @@ class PredajaController extends Controller
         );
     }
 
-    public function exportCsv()
-    {
-        $user = auth()->user();
-
-        if ($user->uloga === 'STUDENT') {
-            return response()->json(['message' => 'Zabranjeno'], 403);
-        }
-
-        $query = Predaja::with(['student', 'zadatak.predmet', 'proveraPlagijata']);
-
-        if ($user->uloga === 'PROFESOR') {
-            $query->whereHas('zadatak.predmet', function ($q) use ($user) {
-                $q->where('profesor_id', $user->id);
-            });
-        }
-
-        $predaje = $query->get();
-
-        $headers = [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ];
-
-        $filename = 'predaje_export.csv';
-
-        return response()->streamDownload(function () use ($predaje) {
-            $handle = fopen('php://output', 'w');
-            fprintf($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, [
-                'ID',
-                'Student',
-                'Email',
-                'Predmet',
-                'Zadatak',
-                'Status',
-                'Ocena',
-                'Komentar',
-                'Provera plagijata',
-                'Procenat slicnosti',
-                'Predato',
-            ]);
-
-            foreach ($predaje as $predaja) {
-                fputcsv($handle, [
-                    $predaja->id,
-                    $predaja->student?->ime . ' ' . $predaja->student?->prezime,
-                    $predaja->student?->email,
-                    $predaja->zadatak?->predmet?->naziv,
-                    $predaja->zadatak?->naslov,
-                    $predaja->status,
-                    $predaja->ocena,
-                    $predaja->komentar,
-                    $predaja->proveraPlagijata?->status,
-                    $predaja->proveraPlagijata?->procenat_slicnosti,
-                    $predaja->submitted_at?->format('Y-m-d H:i:s'),
-                ]);
-            }
-
-            fclose($handle);
-        }, $filename, $headers);
-    }
+    
 }

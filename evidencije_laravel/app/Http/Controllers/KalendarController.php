@@ -8,9 +8,90 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use OpenApi\Attributes as OA;
 
 class KalendarController extends Controller
 {
+
+    #[OA\Get(
+        path: "/api/kalendar/rokovi",
+        summary: "Lista rokova zadataka i državnih praznika (Nager.Date API)",
+        tags: ["Kalendar"],
+        security: [["bearerAuth" => []]],
+        responses: [
+
+            new OA\Response(
+                response: 200,
+                description: "Uspešno vraćeni rokovi",
+                content: new OA\JsonContent(
+                    properties: [
+
+                        new OA\Property(
+                            property: "data",
+                            type: "array",
+                            items: new OA\Items(
+                                properties: [
+
+                                    new OA\Property(property: "id", type: "string", example: "zadatak-5"),
+                                    new OA\Property(property: "source", type: "string", example: "internal"),
+                                    new OA\Property(property: "title", type: "string", example: "Projektni zadatak"),
+                                    new OA\Property(property: "description", type: "string", example: "Implementacija API-ja"),
+                                    new OA\Property(property: "start", type: "string", format: "date-time"),
+                                    new OA\Property(property: "end", type: "string", format: "date-time"),
+                                    new OA\Property(property: "all_day", type: "boolean", example: false),
+                                    new OA\Property(property: "subject", type: "string", example: "Internet tehnologije"),
+                                    new OA\Property(property: "subject_code", type: "string", example: "ITEH"),
+                                    new OA\Property(property: "profesor", type: "string", example: "Petar Petrović"),
+
+                                ],
+                                type: "object"
+                            )
+                        ),
+
+                        new OA\Property(
+                            property: "meta",
+                            type: "object",
+                            properties: [
+                                new OA\Property(
+                                    property: "external_calendar_provider",
+                                    type: "string",
+                                    example: "nager_date_public_holidays"
+                                ),
+                                new OA\Property(
+                                    property: "external_calendar_connected",
+                                    type: "boolean",
+                                    example: true
+                                ),
+                                new OA\Property(
+                                    property: "today",
+                                    type: "object",
+                                    properties: [
+                                        new OA\Property(property: "date", type: "string", example: "2026-03-02"),
+                                        new OA\Property(property: "day_name", type: "string", example: "ponedeljak"),
+                                    ]
+                                )
+                            ]
+                        )
+
+                    ],
+                    type: "object"
+                )
+            ),
+
+            new OA\Response(
+                response: 403,
+                description: "Zabranjen pristup"
+            ),
+
+            new OA\Response(
+                response: 401,
+                description: "Neautorizovan pristup"
+            )
+        ]
+    )]
+
+
+
     public function rokovi(Request $request)
     {
         $user = $request->user();

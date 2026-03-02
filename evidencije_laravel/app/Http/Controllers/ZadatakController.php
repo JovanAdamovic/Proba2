@@ -8,14 +8,47 @@ use App\Models\Zadatak;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use OpenApi\Attributes as OA;
 
 class ZadatakController extends Controller
 {
+    #[OA\Get(
+        path: "/api/zadaci",
+        summary: "Lista zadataka dostupnih ulogovanom korisniku (ADMIN: svi, STUDENT: za upisane predmete, PROFESOR: njegovi zadaci)",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista zadataka"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+        ]
+    )]
     public function index()
     {
         return $this->moji();
     }
 
+    #[OA\Get(
+        path: "/api/zadaci/{id}",
+        summary: "Detalji zadatka (ADMIN: bilo koji, STUDENT: samo za upisani predmet, PROFESOR: samo svoj zadatak)",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID zadatka",
+                schema: new OA\Schema(type: "integer"),
+                example: 10
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Detalji zadatka"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Zadatak nije pronađen")
+        ]
+    )]
     public function show($id)
     {
         $user = auth()->user();
@@ -38,6 +71,31 @@ class ZadatakController extends Controller
         return new ZadatakResource($zadatak);
     }
 
+    #[OA\Post(
+        path: "/api/zadaci",
+        summary: "Kreiranje zadatka (PROFESOR/ADMIN). Profesor može kreirati samo za predmet koji predaje.",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["predmet_id", "naslov", "rok_predaje"],
+                properties: [
+                    new OA\Property(property: "predmet_id", type: "integer", example: 1),
+                    new OA\Property(property: "naslov", type: "string", example: "Seminarski rad - I faza"),
+                    new OA\Property(property: "opis", type: "string", nullable: true, example: "Uraditi ER dijagram i opis poslovnih pravila."),
+                    new OA\Property(property: "rok_predaje", type: "string", format: "date-time", example: "2026-03-20 23:59:00")
+                ],
+                type: "object"
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Zadatak uspešno kreiran"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 422, description: "Validaciona greška")
+        ]
+    )]
     public function store(Request $request)
     {
         $user = auth()->user();
@@ -77,7 +135,7 @@ class ZadatakController extends Controller
 
         $zadatak = Zadatak::create([
             'predmet_id'  => $request->predmet_id,
-            'profesor_id' => $user->id, 
+            'profesor_id' => $user->id,
             'naslov'      => $request->naslov,
             'opis'        => $request->opis,
             'rok_predaje' => $request->rok_predaje,
@@ -89,6 +147,41 @@ class ZadatakController extends Controller
         ], 201);
     }
 
+    #[OA\Put(
+        path: "/api/zadaci/{id}",
+        summary: "Ažuriranje zadatka (PROFESOR/ADMIN). Profesor može menjati samo svoj zadatak; ako menja predmet_id, mora biti predmet koji predaje.",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID zadatka",
+                schema: new OA\Schema(type: "integer"),
+                example: 10
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "predmet_id", type: "integer", example: 1),
+                    new OA\Property(property: "naslov", type: "string", example: "Seminarski rad - I faza (izmena)"),
+                    new OA\Property(property: "opis", type: "string", nullable: true, example: "Dodati i BPMN dijagram."),
+                    new OA\Property(property: "rok_predaje", type: "string", format: "date-time", example: "2026-03-22 23:59:00")
+                ],
+                type: "object"
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Zadatak uspešno ažuriran"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Zadatak nije pronađen"),
+            new OA\Response(response: 422, description: "Validaciona greška")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = auth()->user();
@@ -143,6 +236,28 @@ class ZadatakController extends Controller
         );
     }
 
+    #[OA\Delete(
+        path: "/api/zadaci/{id}",
+        summary: "Brisanje zadatka (samo ADMIN)",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID zadatka",
+                schema: new OA\Schema(type: "integer"),
+                example: 10
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Zadatak uspešno obrisan"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+            new OA\Response(response: 403, description: "Zabranjeno (nije ADMIN)"),
+            new OA\Response(response: 404, description: "Zadatak nije pronađen")
+        ]
+    )]
     public function destroy($id)
     {
         $user = auth()->user();
@@ -161,6 +276,16 @@ class ZadatakController extends Controller
         return response()->json(['message' => 'Zadatak je uspešno obrisan.'], 200);
     }
 
+    #[OA\Get(
+        path: "/api/zadaci/moji",
+        summary: "Moji zadaci (ADMIN: svi, STUDENT: za upisane predmete, PROFESOR: njegovi zadaci)",
+        tags: ["Zadaci"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista zadataka"),
+            new OA\Response(response: 401, description: "Neautorizovan pristup"),
+        ]
+    )]
     public function moji()
     {
         $user = auth()->user();

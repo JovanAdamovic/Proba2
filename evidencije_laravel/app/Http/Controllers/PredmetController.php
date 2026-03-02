@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Models\Predmet;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -10,20 +9,98 @@ use Illuminate\Validation\Rule;
 use App\Http\Resources\PredmetResource;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use OpenApi\Attributes as OA;
 
 class PredmetController extends Controller
 {
+    #[OA\Get(
+        path: "/api/predmeti",
+        summary: "Lista predmeta (isti rezultat kao /predmeti/moji). Vraća predmete u skladu sa ulogom korisnika.",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista predmeta"),
+            new OA\Response(response: 401, description: "Unauthorized")
+        ]
+    )]
     public function index()
     {
         return $this->moji();
     }
 
+    #[OA\Get(
+        path: "/api/predmeti/moji",
+        summary: "Moji predmeti. STUDENT: upisani predmeti; PROFESOR: predmeti koje predaje; ADMIN: svi predmeti.",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Lista predmeta"),
+            new OA\Response(response: 401, description: "Unauthorized")
+        ]
+    )]
+    public function moji()
+    {
+        $user = auth()->user();
+
+        $hasPivot = Schema::hasTable('predmet_profesor');
+        $relations = ['profesor', 'studenti'];
+        if ($hasPivot) {
+            $relations[] = 'profesori';
+        }
+
+        if ($user->uloga === 'STUDENT') {
+            return PredmetResource::collection(
+                $user->predmeti()->with($relations)->get()
+            );
+        }
+
+        if ($user->uloga === 'PROFESOR') {
+            $query = Predmet::where('profesor_id', $user->id);
+
+            if ($hasPivot) {
+                $query->orWhereHas('profesori', function ($subquery) use ($user) {
+                    $subquery->where('users.id', $user->id);
+                });
+            }
+
+            return PredmetResource::collection(
+                $query->with($relations)->get()
+            );
+        }
+
+        return PredmetResource::collection(
+            Predmet::with($relations)->get()
+        );
+    }
+
+    #[OA\Get(
+        path: "/api/predmeti/{id}",
+        summary: "Detalji predmeta. ADMIN: može sve. STUDENT: samo ako je upisan. PROFESOR: samo ako predaje predmet.",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predmeta",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Detalji predmeta"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno"),
+            new OA\Response(response: 404, description: "Predmet nije pronađen")
+        ]
+    )]
     public function show($id)
     {
         $user = auth()->user();
 
-        $hasPivot = Schema::hasTable('predmet_profesor'); 
-        $relations = ['profesor', 'studenti']; 
+        $hasPivot = Schema::hasTable('predmet_profesor');
+        $relations = ['profesor', 'studenti'];
         if ($hasPivot) {
             $relations[] = 'profesori';
         }
@@ -31,11 +108,11 @@ class PredmetController extends Controller
         $predmet = Predmet::with($relations)->findOrFail($id);
 
         if ($user->uloga === 'ADMIN') {
-            return new PredmetResource($predmet);  
+            return new PredmetResource($predmet);
         }
 
         if ($user->uloga === 'STUDENT') {
-            $upisan = $user->predmeti()             
+            $upisan = $user->predmeti()
                 ->where('predmeti.id', $predmet->id)
                 ->exists();
 
@@ -59,6 +136,45 @@ class PredmetController extends Controller
         return new PredmetResource($predmet);
     }
 
+    #[OA\Post(
+        path: "/api/predmeti",
+        summary: "Kreiranje predmeta (ADMIN). Podržava profesora preko profesor_id ili listu profesora preko profesor_ids, kao i student_ids.",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["naziv", "sifra", "godina_studija"],
+                properties: [
+                    new OA\Property(property: "naziv", type: "string", example: "Internet tehnologije"),
+                    new OA\Property(property: "sifra", type: "string", example: "ITEH"),
+                    new OA\Property(property: "godina_studija", type: "integer", example: 2),
+
+                    new OA\Property(property: "profesor_id", type: "integer", nullable: true, example: 5),
+                    new OA\Property(
+                        property: "profesor_ids",
+                        type: "array",
+                        items: new OA\Items(type: "integer"),
+                        example: [5, 7]
+                    ),
+                    new OA\Property(
+                        property: "student_ids",
+                        type: "array",
+                        items: new OA\Items(type: "integer"),
+                        example: [10, 11, 12]
+                    ),
+                ],
+                type: "object"
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Predmet kreiran"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno (nije ADMIN)"),
+            new OA\Response(response: 422, description: "Validaciona greška"),
+            new OA\Response(response: 500, description: "Tabela predmet_profesor ne postoji / server greška")
+        ]
+    )]
     public function store(Request $request)
     {
         $user = auth()->user();
@@ -144,6 +260,55 @@ class PredmetController extends Controller
         );
     }
 
+    #[OA\Put(
+        path: "/api/predmeti/{id}",
+        summary: "Izmena predmeta (ADMIN). Može menjati naziv/sifra/godina_studija, profesore i studente.",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predmeta",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "naziv", type: "string", example: "Internet tehnologije"),
+                    new OA\Property(property: "sifra", type: "string", example: "ITEH"),
+                    new OA\Property(property: "godina_studija", type: "integer", example: 2),
+
+                    new OA\Property(property: "profesor_id", type: "integer", nullable: true, example: 5),
+                    new OA\Property(
+                        property: "profesor_ids",
+                        type: "array",
+                        items: new OA\Items(type: "integer"),
+                        example: [5, 7]
+                    ),
+                    new OA\Property(
+                        property: "student_ids",
+                        type: "array",
+                        items: new OA\Items(type: "integer"),
+                        example: [10, 11, 12]
+                    ),
+                ],
+                type: "object"
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Predmet ažuriran"),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno (nije ADMIN)"),
+            new OA\Response(response: 404, description: "Predmet nije pronađen"),
+            new OA\Response(response: 422, description: "Validaciona greška"),
+            new OA\Response(response: 500, description: "Tabela predmet_profesor ne postoji / server greška")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = auth()->user();
@@ -236,6 +401,37 @@ class PredmetController extends Controller
         );
     }
 
+    #[OA\Delete(
+        path: "/api/predmeti/{id}",
+        summary: "Brisanje predmeta (ADMIN).",
+        tags: ["Predmeti"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "id",
+                in: "path",
+                required: true,
+                description: "ID predmeta",
+                schema: new OA\Schema(type: "integer"),
+                example: 1
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Predmet obrisan",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Predmet je obrisan.")
+                    ],
+                    type: "object"
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthorized"),
+            new OA\Response(response: 403, description: "Zabranjeno (nije ADMIN)"),
+            new OA\Response(response: 404, description: "Predmet nije pronađen")
+        ]
+    )]
     public function destroy($id)
     {
         $user = auth()->user();
@@ -250,40 +446,5 @@ class PredmetController extends Controller
 
         $predmet->delete();
         return response()->json(['message' => 'Predmet je obrisan.'], 200);
-    }
-
-    public function moji()
-    {
-        $user = auth()->user();
-
-        $hasPivot = Schema::hasTable('predmet_profesor');
-        $relations = ['profesor', 'studenti'];
-        if ($hasPivot) {
-            $relations[] = 'profesori';
-        }
-
-        if ($user->uloga === 'STUDENT') {
-            return PredmetResource::collection(
-                $user->predmeti()->with($relations)->get()
-            );
-        }
-
-        if ($user->uloga === 'PROFESOR') {
-            $query = Predmet::where('profesor_id', $user->id);
-
-            if ($hasPivot) {
-                $query->orWhereHas('profesori', function ($subquery) use ($user) {
-                    $subquery->where('users.id', $user->id);
-                });
-            }
-
-            return PredmetResource::collection(
-                $query->with($relations)->get()
-            );
-        }
-
-        return PredmetResource::collection(
-            Predmet::with($relations)->get()
-        );
     }
 }
